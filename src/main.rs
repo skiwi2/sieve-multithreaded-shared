@@ -33,6 +33,7 @@ fn main() {
         max_prime: max_prime
     };
     println!("{:?}", sieve);
+    println!("{:?}", sieve.calculate_indices(std::mem::size_of::<usize>() * 8));
 }
 
 fn parse_command_line_argument<T: FromStr + Bounded + Display>(position: usize, name: &str) -> T {
@@ -54,4 +55,30 @@ fn calculate_actual_threads(requested_threads: usize, max_prime: usize) -> usize
 struct Sieve {
     threads: usize,
     max_prime: usize
+}
+
+impl Sieve {
+    fn calculate_indices(&self, storage_size: usize) -> Vec<usize> {
+        let numbers_per_segment = (self.max_prime + 1) / self.threads;
+
+        let mut indices = vec![];        
+        let mut current_index = self.max_prime + 1;
+        loop {
+            if indices.len() == self.threads - 1 {
+                break;
+            }
+
+            current_index = match current_index.checked_sub(numbers_per_segment) {
+                None => break,
+                Some(val) => val
+            };
+            indices.insert(0, current_index);
+        }
+
+        for index in &mut indices {
+            *index = ((*index / storage_size) + 1) * storage_size;
+        }
+
+        indices
+    }
 }
