@@ -1,5 +1,6 @@
 extern crate num;
 
+use std::cmp;
 use std::env;
 use std::fmt::Display;
 use std::str::FromStr;
@@ -22,8 +23,10 @@ macro_rules! err_exit {
 }
 
 fn main() {
-    let threads: usize = parse_command_line_argument(1, "threads");
+    let requested_threads: usize = parse_command_line_argument(1, "threads");
     let max_prime: usize = parse_command_line_argument(2, "max_prime");
+
+    let threads = calculate_actual_threads(requested_threads, max_prime);
 
     let sieve = Sieve {
         threads: threads,
@@ -40,6 +43,11 @@ fn parse_command_line_argument<T: FromStr + Bounded + Display>(position: usize, 
             Ok(val) => val
         }
     }
+}
+
+fn calculate_actual_threads(requested_threads: usize, max_prime: usize) -> usize {
+    let sqrt_prime = (max_prime as f64).sqrt().ceil() as usize;
+    cmp::min(sqrt_prime, requested_threads)
 }
 
 #[derive(Debug)]
