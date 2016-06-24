@@ -1,9 +1,12 @@
+extern crate bit_vector;
 extern crate num;
 
 use std::cmp;
 use std::env;
 use std::fmt::Display;
 use std::str::FromStr;
+
+use bit_vector::{BitVector,BitSliceMut};
 
 use num::Bounded;
 
@@ -22,6 +25,8 @@ macro_rules! err_exit {
     )
 }
 
+type SieveStorage = usize;
+
 fn main() {
     let requested_threads: usize = parse_command_line_argument(1, "threads");
     let max_prime: usize = parse_command_line_argument(2, "max_prime");
@@ -33,7 +38,7 @@ fn main() {
         max_prime: max_prime
     };
     println!("{:?}", sieve);
-    println!("{:?}", sieve.calculate_indices(std::mem::size_of::<usize>() * 8));
+    println!("{:?}", sieve.find_primes());
 }
 
 fn parse_command_line_argument<T: FromStr + Bounded + Display>(position: usize, name: &str) -> T {
@@ -58,7 +63,26 @@ struct Sieve {
 }
 
 impl Sieve {
-    fn calculate_indices(&self, storage_size: usize) -> Vec<usize> {
+    fn find_primes(&self) -> SieveResult {
+        let mut bit_vector = BitVector::with_capacity(self.max_prime + 1, true);
+
+        {
+            let indices = self.calculate_indices();
+            let bit_slices = self.split_into_bit_slices(&mut bit_vector, &indices);
+
+            println!("{:?}", bit_slices);
+        }
+
+        //TODO implement methods to get the bit vector or print its contents on this
+        SieveResult {
+            threads: self.threads,
+            max_prime: self.max_prime,
+            bit_vector: bit_vector
+        }
+    }
+
+    fn calculate_indices(&self) -> Vec<usize> {
+        let storage_size = std::mem::size_of::<SieveStorage>() * 8;
         let numbers_per_segment = (self.max_prime + 1) / self.threads;
 
         let mut indices = vec![];        
@@ -81,4 +105,28 @@ impl Sieve {
 
         indices
     }
+
+    fn split_into_bit_slices<'a>(&self, bit_vector: &'a mut BitVector<SieveStorage>, indices: &[usize]) -> Vec<BitSliceMut<'a, SieveStorage>> {
+        let mut bit_slices = vec![];
+
+        //TODO request as_bit_slice and as_bit_slice_mut methods?
+        bit_slices.push(bit_vector.split_at_mut(0).1);
+        let mut split_indices = 0;
+        for index in indices {
+            let last_slice = bit_slices.pop().unwrap();
+            let (new_slice, remainder) = last_slice.split_at_mut(index - split_indices);
+            split_indices = *index;
+            bit_slices.push(new_slice);
+            bit_slices.push(remainder);
+        }
+
+        bit_slices
+    }
+}
+
+#[derive(Debug)]
+struct SieveResult {
+    threads: usize,
+    max_prime: usize,
+    bit_vector: BitVector<SieveStorage>
 }

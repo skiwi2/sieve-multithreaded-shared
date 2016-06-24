@@ -5,3 +5,4 @@ authors = ["skiwi <frank_skiwi@hotmail.com>"]
 
 [dependencies]
 num = "0.1.32"
+bit-vector = { git = "https://github.com/skiwi2/bit-vector.git" }
