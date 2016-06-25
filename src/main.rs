@@ -70,9 +70,9 @@ impl Sieve {
 
         {
             let indices = self.calculate_indices();
-            let bit_slices = self.split_into_bit_slices(&mut bit_vector, &indices);
+            let prime_slices = self.split_into_prime_slices(&mut bit_vector, &indices);
 
-            println!("{:?}", bit_slices);
+            println!("{:?}", prime_slices);
         }
 
         SieveResult {
@@ -107,7 +107,7 @@ impl Sieve {
         indices
     }
 
-    fn split_into_bit_slices<'a>(&self, bit_vector: &'a mut BitVector<SieveStorage>, indices: &[usize]) -> Vec<BitSliceMut<'a, SieveStorage>> {
+    fn split_into_prime_slices<'a>(&self, bit_vector: &'a mut BitVector<SieveStorage>, indices: &[usize]) -> Vec<PrimeSlice<'a>> {
         let mut bit_slices = vec![];
 
         //TODO request as_bit_slice and as_bit_slice_mut methods?
@@ -121,7 +121,30 @@ impl Sieve {
             bit_slices.push(remainder);
         }
 
-        bit_slices
+        let mut prime_slices = vec![];
+        let mut rolling_index = 0;
+        for bit_slice in bit_slices {
+            let bit_slice_capacity = bit_slice.capacity();
+            prime_slices.push(PrimeSlice::new(bit_slice, rolling_index));
+            rolling_index += bit_slice_capacity;
+        }
+
+        prime_slices
+    }
+}
+
+#[derive(Debug)]
+struct PrimeSlice<'a> {
+    bit_slice: BitSliceMut<'a, SieveStorage>,
+    start_number: usize
+}
+
+impl<'a> PrimeSlice<'a> {
+    fn new(bit_slice: BitSliceMut<'a, SieveStorage>, start_number: usize) -> PrimeSlice<'a> {
+        PrimeSlice {
+            bit_slice: bit_slice,
+            start_number: start_number
+        }
     }
 }
 
