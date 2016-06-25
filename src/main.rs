@@ -38,7 +38,9 @@ fn main() {
         max_prime: max_prime
     };
     println!("{:?}", sieve);
-    println!("{:?}", sieve.find_primes());
+    let result = sieve.find_primes();
+    println!("Primes: {:?}", result.primes());
+    println!("Found number of primes: {}", result.number_of_primes());
 }
 
 fn parse_command_line_argument<T: FromStr + Bounded + Display>(position: usize, name: &str) -> T {
@@ -73,7 +75,6 @@ impl Sieve {
             println!("{:?}", bit_slices);
         }
 
-        //TODO implement methods to get the bit vector or print its contents on this
         SieveResult {
             threads: self.threads,
             max_prime: self.max_prime,
@@ -129,4 +130,14 @@ struct SieveResult {
     threads: usize,
     max_prime: usize,
     bit_vector: BitVector<SieveStorage>
+}
+
+impl SieveResult {
+    fn number_of_primes(&self) -> usize {
+        self.bit_vector.iter().filter(|x| *x).count()
+    }
+
+    fn primes(&self) -> Vec<usize> {
+        self.bit_vector.iter().enumerate().filter(|x| x.1).map(|x| x.0).collect()
+    }
 }
