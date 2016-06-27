@@ -7,3 +7,4 @@ authors = ["skiwi <frank_skiwi@hotmail.com>"]
 num = "0.1.32"
 bit-vector = { git = "https://github.com/skiwi2/bit-vector.git" }
 crossbeam = "0.2.9"
+stopwatch = "0.0.7"

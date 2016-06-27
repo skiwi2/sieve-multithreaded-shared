@@ -1,6 +1,7 @@
 extern crate bit_vector;
 extern crate crossbeam;
 extern crate num;
+extern crate stopwatch;
 
 use std::collections::VecDeque;
 use std::cmp;
@@ -12,6 +13,8 @@ use std::sync::mpsc;
 use bit_vector::{BitVector,BitSliceMut};
 
 use num::Bounded;
+
+use stopwatch::Stopwatch;
 
 macro_rules! err_exit {
     ($($arg:tt)*) => (
@@ -41,9 +44,12 @@ fn main() {
         max_prime: max_prime
     };
     println!("{:?}", sieve);
+    let stopwatch = Stopwatch::start_new();
     let result = sieve.find_primes();
-    println!("Primes: {:?}", result.primes());
+    println!("Time elapsed finding primes: {:.3}s", stopwatch.elapsed_ms() as f64 / 1000f64);
+    //println!("Primes: {:?}", result.primes());
     println!("Found number of primes: {}", result.number_of_primes());
+    println!("Total time elapsed: {:.3}s", stopwatch.elapsed_ms() as f64 / 1000f64);
 }
 
 fn parse_command_line_argument<T: FromStr + Bounded + Display>(position: usize, name: &str) -> T {
