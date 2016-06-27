@@ -1,10 +1,13 @@
 extern crate bit_vector;
+extern crate crossbeam;
 extern crate num;
 
+use std::collections::VecDeque;
 use std::cmp;
 use std::env;
 use std::fmt::Display;
 use std::str::FromStr;
+use std::sync::mpsc;
 
 use bit_vector::{BitVector,BitSliceMut};
 
@@ -67,12 +70,43 @@ struct Sieve {
 impl Sieve {
     fn find_primes(&self) -> SieveResult {
         let mut bit_vector = BitVector::with_capacity(self.max_prime + 1, true);
+        bit_vector.set(0, false);
+        bit_vector.set(1, false);
 
         {
             let indices = self.calculate_indices();
-            let prime_slices = self.split_into_prime_slices(&mut bit_vector, &indices);
+            let mut prime_slices = self.split_into_prime_slices(&mut bit_vector, &indices);
+            let first_prime_slice = prime_slices.pop_front().unwrap();
+            //TODO refactor this horrible VecDeque popping, should instead use references, but how to get multiple mutable references to slice contents?
 
-            println!("{:?}", prime_slices);
+            let mut transmitters = vec![];
+            let mut handles = vec![];
+
+            crossbeam::scope(|scope| {
+                for _ in 1..self.threads {
+                    let (tx, rx) = mpsc::channel();
+                    transmitters.push(tx);
+
+                    let mut threaded_sieve_task = ThreadedSieveTask::new(prime_slices.pop_front().unwrap());
+
+                    let handle = scope.spawn(move || {
+                        for prime in rx.iter() {
+                            threaded_sieve_task.strike_out_multiples(prime);
+                        }
+                    });
+                    handles.push(handle);
+                }
+
+                let sqrt_prime = (self.max_prime as f64).sqrt().ceil() as usize;
+                let main_sieve_task = MainSieveTask::new(first_prime_slice);
+                for prime in main_sieve_task.generate_primes().take_while(|prime| *prime <= sqrt_prime) {
+                    for tx in &transmitters {
+                        tx.send(prime).unwrap();
+                    }
+                }
+
+                drop(transmitters);
+            });
         }
 
         SieveResult {
@@ -107,7 +141,7 @@ impl Sieve {
         indices
     }
 
-    fn split_into_prime_slices<'a>(&self, bit_vector: &'a mut BitVector<SieveStorage>, indices: &[usize]) -> Vec<PrimeSlice<'a>> {
+    fn split_into_prime_slices<'a>(&self, bit_vector: &'a mut BitVector<SieveStorage>, indices: &[usize]) -> VecDeque<PrimeSlice<'a>> {
         let mut bit_slices = vec![];
 
         //TODO request as_bit_slice and as_bit_slice_mut methods?
@@ -121,11 +155,11 @@ impl Sieve {
             bit_slices.push(remainder);
         }
 
-        let mut prime_slices = vec![];
+        let mut prime_slices = VecDeque::with_capacity(indices.len());
         let mut rolling_index = 0;
         for bit_slice in bit_slices {
             let bit_slice_capacity = bit_slice.capacity();
-            prime_slices.push(PrimeSlice::new(bit_slice, rolling_index));
+            prime_slices.push_back(PrimeSlice::new(bit_slice, rolling_index));
             rolling_index += bit_slice_capacity;
         }
 
@@ -144,6 +178,106 @@ impl<'a> PrimeSlice<'a> {
         PrimeSlice {
             bit_slice: bit_slice,
             start_number: start_number
+        }
+    }
+
+    fn set_is_prime(&mut self, number: usize, value: bool) {
+        self.bit_slice.set(number - self.start_number, value);
+    }
+
+    fn is_prime(&self, number: usize) -> bool {
+        self.bit_slice[number - self.start_number]
+    }
+
+    fn first_number(&self) -> usize {
+        self.start_number
+    }
+
+    fn last_number(&self) -> usize {
+        self.start_number + self.bit_slice.capacity() - 1
+    }
+
+    fn first_number_in_range_with_divisor(&self, divisor: usize) -> Option<usize> {
+        if divisor > self.last_number() {
+            return None;
+        }
+        if self.first_number() % divisor == 0 {
+            return Some(self.first_number());
+        }
+        Some(self.first_number() + (divisor - (self.first_number() % divisor)))
+    }
+}
+
+#[derive(Debug)]
+struct MainSieveTask<'a> {
+    prime_slice: PrimeSlice<'a>
+}
+
+impl<'a> MainSieveTask<'a> {
+    fn new(prime_slice: PrimeSlice<'a>) -> MainSieveTask<'a> {
+        MainSieveTask {
+            prime_slice: prime_slice
+        }
+    }
+
+    fn generate_primes(self) -> GenIter<'a> {
+        GenIter {
+            prime_slice: self.prime_slice,
+            start_number: 0
+        }
+    }
+}
+
+struct GenIter<'a> {
+    prime_slice: PrimeSlice<'a>,
+    start_number: usize
+}
+
+impl<'a> Iterator for GenIter<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        let mut num = self.start_number;
+
+        while !self.prime_slice.is_prime(num) {
+            num += 1;
+            if num > self.prime_slice.last_number() {
+                return None;
+            }
+        }
+        self.start_number = num + 1;    //do not mark num as prime, but do step over it for the next iteration
+
+        let mut i = num * num;
+        while i <= self.prime_slice.last_number() {
+            self.prime_slice.set_is_prime(i, false);
+            i += num;
+        }
+
+        Some(num)
+    }
+}
+
+#[derive(Debug)]
+struct ThreadedSieveTask<'a> {
+    prime_slice: PrimeSlice<'a>
+}
+
+impl<'a> ThreadedSieveTask<'a> {
+    fn new(prime_slice: PrimeSlice<'a>) -> ThreadedSieveTask<'a> {
+        ThreadedSieveTask {
+            prime_slice: prime_slice
+        }
+    }
+
+    fn strike_out_multiples(&mut self, number: usize) {
+        match self.prime_slice.first_number_in_range_with_divisor(number) {
+            None => return,
+            Some(mut val) => {
+                while val <= self.prime_slice.last_number() {
+                    self.prime_slice.set_is_prime(val, false);
+                    val += number;
+                } 
+            }
         }
     }
 }
